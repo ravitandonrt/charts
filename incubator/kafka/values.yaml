@@ -24,7 +24,7 @@ resources: {}
   # requests:
   #   cpu: 100m
   #   memory: 1024Mi
-kafkaHeapOptions: "-Xmx1G -Xms1G"
+kafkaHeapOptions: "-Xmx8G -Xms8G"
 
 ## Optional Container Security context
 securityContext: {}
@@ -69,31 +69,28 @@ logSubPath: "logs"
 ## Pod scheduling preferences (by default keep pods within a release on separate nodes).
 ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
 ## By default we don't set affinity
-affinity: {}
+# affinity: {}
 ## Alternatively, this typical example defines:
 ## antiAffinity (to keep Kafka pods on separate pods)
 ## and affinity (to encourage Kafka pods to be collocated with Zookeeper pods)
-# affinity:
-#   podAntiAffinity:
-#     requiredDuringSchedulingIgnoredDuringExecution:
-#     - labelSelector:
-#         matchExpressions:
-#         - key: app
-#           operator: In
-#           values:
-#           - kafka
-#       topologyKey: "kubernetes.io/hostname"
-#   podAffinity:
-#     preferredDuringSchedulingIgnoredDuringExecution:
-#      - weight: 50
-#        podAffinityTerm:
-#          labelSelector:
-#            matchExpressions:
-#            - key: app
-#              operator: In
-#              values:
-#                - zookeeper
-#          topologyKey: "kubernetes.io/hostname"
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: beta.kubernetes.io/instance-type
+          operator: In
+          values:
+          - r4.2xlarge
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values:
+          - kafka
+      topologyKey: kubernetes.io/hostname
 
 ## Node labels for pod assignment
 ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
@@ -210,10 +207,12 @@ additionalPorts: {}
 persistence:
   enabled: true
 
+  volumesPerPod: 4
+
   ## The size of the PersistentVolume to allocate to each Kafka Pod in the StatefulSet. For
   ## production servers this number should likely be much larger.
   ##
-  size: "1Gi"
+  size: "1Ti"
 
   ## The location within the Kafka container where the PV will mount its storage and Kafka will
   ## store its logs.
@@ -227,7 +226,7 @@ persistence:
   ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
   ##   GKE, AWS & OpenStack)
   ##
-  # storageClass:
+  storageClass: st1
 
 jmx:
   ## Rules to apply to the Prometheus JMX Exporter.  Note while lots of stats have been cleaned and exposed,
@@ -436,12 +435,14 @@ zookeeper:
   ## Environmental variables to set in Zookeeper
   env:
     ## The JVM heap size to allocate to Zookeeper
-    ZK_HEAP_SIZE: "1G"
+    ZK_HEAP_SIZE: "4G"
 
   persistence:
-    enabled: false
+    enabled: true
     ## The amount of PV storage allocated to each Zookeeper pod in the statefulset
-    # size: "2Gi"
+    size: "500Gi"
+
+    storageClass: st1
 
   ## Specify a Zookeeper imagePullPolicy
   ## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
@@ -455,10 +456,21 @@ zookeeper:
   ## Pod scheduling preferences (by default keep pods within a release on separate nodes).
   ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
   ## By default we don't set affinity:
-  affinity: {}  # Criteria by which pod label-values influence scheduling for zookeeper pods.
-  # podAntiAffinity:
-  #   requiredDuringSchedulingIgnoredDuringExecution:
-  #     - topologyKey: "kubernetes.io/hostname"
-  #       labelSelector:
-  #         matchLabels:
-  #           release: zookeeper
+  affinity: # Criteria by which pod label-values influence scheduling for zookeeper pods.
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: beta.kubernetes.io/instance-type
+            operator: In
+            values:
+            - t3a.xlarge
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - zookeeper
+        topologyKey: kubernetes.io/hostname

@@ -166,7 +166,16 @@ spec:
         {{- end }}
         {{- if not (hasKey .Values.configurationOverrides "log.dirs") }}
         - name: KAFKA_LOG_DIRS
-          value: {{ printf "%s/%s" .Values.persistence.mountPath .Values.logSubPath | quote }}
+          {{- $kafkaLogDirs := printf "%s/%s" .Values.persistence.mountPath .Values.logSubPath }}
+          {{- $volumesPerPod := (.Values.persistence.volumesPerPod | int) }}
+          {{- if gt $volumesPerPod 1 }}
+            {{- $kafkaLogDirsSlice := list }}
+            {{- range $k, $v := until $volumesPerPod }}
+              {{- $kafkaLogDirsSlice = append $kafkaLogDirsSlice (printf "%s-%d/%s" $.Values.persistence.mountPath $v $.Values.logSubPath) }}
+              {{- $kafkaLogDirs = $kafkaLogDirsSlice | join "," }}
+            {{- end }}
+          {{- end }}
+          value: {{ $kafkaLogDirs | quote }}
         {{- end }}
         {{- range $key, $value := .Values.configurationOverrides }}
         - name: {{ printf "KAFKA_%s" $key | replace "." "_" | upper | quote }}
@@ -211,8 +220,16 @@ spec:
           {{- end }}
           exec /etc/confluent/docker/run
         volumeMounts:
+        {{- $volumesPerPod := (.Values.persistence.volumesPerPod | int) }}
+        {{- if gt $volumesPerPod 1 }}
+          {{- range $k, $v := until $volumesPerPod }}
+        - name: {{ printf "datadir-%d" $v }}
+          mountPath: {{ printf "%s-%d" $.Values.persistence.mountPath $v | quote }}
+          {{- end }}
+        {{- else }}
         - name: datadir
           mountPath: {{ .Values.persistence.mountPath | quote }}
+        {{- end }}
         {{- range $secret := .Values.secrets }}
           {{- if $secret.mountPath }}
             {{- if $secret.keys }}
@@ -255,6 +272,30 @@ spec:
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
   {{- if .Values.persistence.enabled }}
   volumeClaimTemplates:
+  {{- $volumesPerPod := (.Values.persistence.volumesPerPod | int) }}
+  {{- if gt $volumesPerPod 1 }}
+    {{- range $k, $v := until $volumesPerPod }}
+  - metadata:
+      name: {{ printf "datadir-%d" $v }}
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: {{ $.Values.persistence.size }}
+      {{- if $.Values.persistence.storageClass }}
+      {{- if (eq "-" $.Values.persistence.storageClass) }}
+      storageClassName: ""
+      {{- else }}
+      storageClassName: "{{ $.Values.persistence.storageClass }}"
+{{- if $.Values.persistence.storageClassParameters }}
+      parameters:
+        type: {{ $.Values.persistence.storageClassParameters.type }}
+        fsType: {{ $.Values.persistence.storageClassParameters.fsType }}
+{{- end }}
+      {{- end }}
+      {{- end }}
+    {{- end }}
+  {{- else }}
   - metadata:
       name: datadir
     spec:
@@ -269,4 +310,5 @@ spec:
       storageClassName: "{{ .Values.persistence.storageClass }}"
       {{- end }}
       {{- end }}
+  {{- end }}
   {{- end }}
